@@ -87,21 +87,18 @@ function saliency.high_entropy_features (...)
       m:cmul(sm:sum(1):select(1,1))
    end
    tScaleSaliency = t:time().real - tScaleSaliency
-   local tgetMaxN = t:time().real
+   local tclearB = t:time().real
    local mkr = math.floor(kr*scalefactor^(nscale-1))
    local mkc = math.floor(kc*scalefactor^(nscale-1))
    local okr = math.floor(mkr/2)
    local okc = math.floor(mkc/2)
    local opr = math.floor(0.5+(h-mkr+1)/sr)
    local opc = math.floor(0.5+(w-mkc+1)/sc)
-   local mactive = m:narrow(1,okr,opr):narrow(2,okc,opc)
-   local tmpm  = torch.Tensor(opr,opc):zero()
+   local tmpm  = torch.Tensor(m:size()):zero()
+   tmpm:narrow(1,okr,opr):narrow(2,okc,opc):fill(1)
    -- clear the borders
-   tmpm:copy(mactive)
-   m:zero()
-   mactive:copy(tmpm)
-   mxy,mv,np = saliency.getMax(mactive,nmswinsize,npts)
-   tgetMaxN = t:time().real - tgetMaxN
+   m:cmul(tmpm)
+   tclearB = t:time().real - tclearB
    tTotal = t:time().real - tTotal
    print(string.format(" - intHist %2d bins: %2.3fs (%2.1f%%)",
                        nbins,tintHist,tintHist/tTotal*100))
@@ -114,11 +111,11 @@ function saliency.high_entropy_features (...)
    end
    print(string.format(" - scale saliency:  %2.3fs (%2.1f%%)",
                        tScaleSaliency,tScaleSaliency/tTotal*100))
-   print(string.format(" - get max list  :  %2.3fs (%2.1f%%)",
-                        tgetMaxN,tgetMaxN/tTotal*100))
+   print(string.format(" - clear border:  %2.3fs (%2.1f%%)",
+                       tclearB,tclearB/tTotal*100))
    print(string.format("       Total time:  %2.3fs (%2.1f%%)",
                        tTotal,tTotal/tTotal*100))
-return m,sm,mxy,mv,np
+   return m,sm
 end
 
 function saliency.high_entropy_motion_features (...)
@@ -156,13 +153,13 @@ function saliency.high_entropy_motion_features (...)
       {arg='histsize', type='number',
        help='how many images do we compare', default=2}
    )
-   -- compute saliency on new image
-   m,sm,mxy,mv = saliency.high_entropy_features(
+   -- compute spatial saliency on new image
+   m,sm = saliency.high_entropy_features(
       img, kr, kc, sr, sc, 
       nscale, scalefactor, nbins, entropyType, nmswinsize, npts)
-
+   -- ring buffer
    if ((not imgprev) or (imgprev == {})) then
-      return m,{{m,sm,mxy,mv,np}}
+      return {{m,sm}}
    else 
       table.insert(imgprev,1,{m,sm,mxy,mv,np})
       if (#imgprev > histsize) then
@@ -170,7 +167,7 @@ function saliency.high_entropy_motion_features (...)
             table.remove(imgprev,i)
          end
       end
-      return m,imgprev
+      return imgprev
    end
 end
 
