@@ -179,10 +179,10 @@ static int libsaliency_(Main_intHist)(lua_State *L){
     // unroll fill w/ 0
     long uc = 4;
     for(bb = 0; bb <= nbins-uc; bb+=uc){
-      ri[0]  = 0;
-      ri[1]  = 0;
-      ri[2]  = 0;
-      ri[3]  = 0;
+      ri[bb]    = 0;
+      ri[bb+1]  = 0;
+      ri[bb+2]  = 0;
+      ri[bb+3]  = 0;
     }
     for(; bb<nbins;bb++){
       ri[bb] = 0;
@@ -199,10 +199,10 @@ static int libsaliency_(Main_intHist)(lua_State *L){
       // unroll copy hist bins 
       long uc = 4;
       for(bb = 0; bb <= nbins-uc; bb+=uc){
-        ri[0]  = rip[0];
-        ri[1]  = rip[1];
-        ri[2]  = rip[2];
-        ri[3]  = rip[3];
+        ri[bb]    = rip[bb];
+        ri[bb+1]  = rip[bb+1];
+        ri[bb+2]  = rip[bb+2];
+        ri[bb+3]  = rip[bb+3];
       }
       for(; bb<nbins;bb++){
         ri[bb]  = rip[bb];
@@ -234,7 +234,6 @@ static int libsaliency_(Main_intHist)(lua_State *L){
       }
     }
   } // loop cc
-
   // cleanup
   THTensor_(free)(row); 
   THTensor_(free)(clone);
@@ -578,6 +577,8 @@ static int libsaliency_(Main_intAvg)(lua_State *L) {
       ic1=ih1; ic2=ih2; ic3=ih3; ic4=ih4; 
     }
   }
+
+
   // cleanup
   THTensor_(free)(src);
 
@@ -718,16 +719,15 @@ static int libsaliency_(Main_spatialMeanOverMax)(lua_State *L) {
     real theSum;
     for(rr = 0; rr < ir; rr++) {
       for(cc = 0; cc < ic; cc++) {
-        theMax = *ss; 
-        theSum = *ss;
-        ss++;
+        theMax = ss[0]; 
+        theSum = ss[0];
         for (bb = 1; bb < ib; bb++){
-          if (*ss > theMax){ theMax = *ss; }
-          theSum += *ss;
-          ss++;
-        } 
-        // sum the channels
-        *dd += theSum/(theMax*ib);
+          if (ss[bb] > theMax){ theMax = ss[bb]; }
+          theSum += ss[bb];
+        }
+        *dd += theSum/(theMax*ib); 
+        
+        ss+=ib; 
         dd++;
       } // for cc
     } // for rr

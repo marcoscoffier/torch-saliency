@@ -204,7 +204,7 @@ function test_intHist(l,nbins,lmin,lmax)
       lmax = l:max()
    end
    if not nbins then
-      nbins = 4
+      nbins = 11
    end
    local chan = l:size(1)
    local dimr = l:size(2)
@@ -247,7 +247,7 @@ function test_intLongHist(l,nbins,lmin,lmax)
       lmax = l:max()
    end
    if not nbins then
-      nbins = 4
+      nbins = 11
    end
    local chan = l:size(1)
    local dimr = l:size(2)
@@ -291,7 +291,7 @@ function test_fullintHist(l,nbins)
       l = torch.randn(3,256,256)
    end
    if not nbins then
-      nbins = 4
+      nbins = 11
    end
    local chan = l:size(1)
    local dimr = l:size(2)
@@ -332,7 +332,7 @@ function test_intHistAvg(l,nbins,kr,kc,sr,sc)
       l = torch.randn(3,256,256)
    end
    if not nbins then
-      nbins = 4
+      nbins = 11
    end
    if not kr then
       kr = 5
@@ -394,7 +394,7 @@ function test_fullintHistAvg(l,nbins,kr,kc,sr,sc)
       l = torch.randn(3,256,256)
    end
    if not nbins then
-      nbins = 4
+      nbins = 11
    end
    if not kr then
       kr = 5
@@ -456,7 +456,7 @@ function test_spatialMax(l,nbins)
       l = torch.randn(3,256,256)
    end
    if not nbins then
-      nbins = 8
+      nbins = 11
    end
    local chan = l:size(1)
    local dimr = l:size(2)
@@ -504,7 +504,7 @@ function test_fullspatialMax(l,nbins)
       l = torch.randn(3,256,256)
    end
    if not nbins then
-      nbins = 8
+      nbins = 11
    end
    local chan = l:size(1)
    local dimr = l:size(2)
@@ -554,7 +554,7 @@ function test_spatialOneOverMax(l,nbins)
       l = torch.randn(3,256,256)
    end
    if not nbins then
-      nbins = 8
+      nbins = 11
    end
    local chan = l:size(1)
    local dimr = l:size(2)
@@ -601,7 +601,7 @@ function test_fullspatialOneOverMax(l,nbins)
       l = torch.randn(3,256,256)
    end
    if not nbins then
-      nbins = 8
+      nbins = 11
    end
    local chan = l:size(1)
    local dimr = l:size(2)
@@ -650,7 +650,7 @@ function test_spatialMeanOverMax(l,nbins)
       l = torch.randn(3,256,256)
    end
    if not nbins then
-      nbins = 8
+      nbins = 11
    end
    local chan = l:size(1)
    local dimr = l:size(2)
@@ -682,6 +682,7 @@ function test_spatialMeanOverMax(l,nbins)
       end
       v = mm[r][r]
       if (math.abs(m - v) > 1e-8) then
+         print("m: "..m.." v: "..v)
          errors = errors + 1
       end 
    end
@@ -697,7 +698,7 @@ function test_fullspatialMeanOverMax(l,nbins)
       l = torch.randn(3,256,256)
    end
    if not nbins then
-      nbins = 8
+      nbins = 11
    end
    local chan = l:size(1)
    local dimr = l:size(2)
