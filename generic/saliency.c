@@ -310,24 +310,25 @@ static int libsaliency_(Main_intHistPack)(lua_State *L){
   minval -= epsilon;
   maxval += epsilon;
   // make sure input is contiguous
+  long cc,i,xx,yy,bb;
   src = THTensor_(newContiguous)(src);
-  real *sd = THTensor_(data)(src);
   long ih  = src->size[0]; // #input channels
   long ir  = src->size[1]; // #input rows
   long ic  = src->size[2]; // #input cols
-
-  long cc,i,xx,yy,bb;
+  real *sd = THTensor_(data)(src);
 
   /*
    * First compute the histogram bins (in clone) */
-  THTensor *clone = THTensor_(newWithSize3d)(ih,ir,ic);
-  real *dorig = THTensor_(data)(clone); // pointer to uninitialized clone
-  real *d     = dorig;
-  long ne     = clone->stride[0];
+  THTensor *clone      = THTensor_(newWithSize3d)(ih,ir,ic);
+  real *dorig          = THTensor_(data)(clone); 
+  real *d              = dorig;
+  long ne              = clone->stride[0];
   THTensor *srcPlane   = THTensor_(new)();
   THTensor *clonePlane = THTensor_(new)();
   // (3 rather than 5 op) histogram code 
   // FIXED !! do each channel independently
+  // Ideally we would pass an array of nbins to allow for varying
+  // number of bins per input channel.
   for(cc = 0; cc < ih; cc++){
     // source channel
     THTensor_(select)(srcPlane, src, 0, cc);
@@ -353,7 +354,9 @@ static int libsaliency_(Main_intHistPack)(lua_State *L){
   // reset
   d = dorig;
   
-  THTensor_(resize4d)(dst, ih , ir, ic, nbins);
+  // Fix we are packing the colors together into a single
+  // histogram
+  THTensor_(resize4d)(dst, 1 , ir, ic, ih*nbins);
   real *ri  = THTensor_(data)(dst);
   real *rip,*rorig;
 
@@ -369,81 +372,102 @@ static int libsaliency_(Main_intHistPack)(lua_State *L){
     
   rorig=ri;
 
-  THTensor *row  = THTensor_(newWithSize1d)(nbins);
+  THTensor *row  = THTensor_(newWithSize1d)(dst->stride[2]);
   real     *rowp = THTensor_(data)(row);
-    
+
+  /* now we collect data from all channels in a single pass
+   * so store a pointer for each channel */
+  real *chanp[ih];
+  chanp[0] = THTensor_(data)(clone);
+  for(cc = 1; cc < ih; cc++){
+    chanp[cc] = chanp[0] + cc*clone->stride[0];
+  }
+  
   /*
 #pragma omp parallel for private(cc,xx,yy,bb,ri,rip,d) shared (ih,ir,ic,nbins,dorig,rorig)
   */
+  // result 1 x nrow x ncol x nchannels * nbins
+  ri = rorig;
+  // unroll fill w/ 0
+  long uc = 4;
+  for(bb = 0; bb <= dst->stride[2]-uc; bb+=uc){
+    ri[bb]    = 0;
+    ri[bb+1]  = 0;
+    ri[bb+2]  = 0;
+    ri[bb+3]  = 0;
+  }
+  for(; bb<dst->stride[2];bb++){
+    ri[bb] = 0;
+  }
+  int bin = 0;
+  // Avoid branching.  Bin the first elem of the first row.
+  // get all the channels
   for(cc = 0; cc < ih; cc++){
-    d  = dorig + cc*clone->stride[0];
-    ri = rorig + cc*dst->stride[0];
-    // unroll fill w/ 0
-    long uc = 4;
-    for(bb = 0; bb <= nbins-uc; bb+=uc){
-      ri[bb]    = 0;
-      ri[bb+1]  = 0;
-      ri[bb+2]  = 0;
-      ri[bb+3]  = 0;
-    }
-    for(; bb<nbins;bb++){
-      ri[bb] = 0;
-    }
-    // Avoid branching.  Bin the first elem of the first row.
-    int bin = (int)floor(*d);
+    bin = (int)floor(*(chanp[cc]));
+    bin += cc*nbins;
     ri[bin] = 1;
-    rip = ri; // rip tracks previous entry (above)
-    ri+=dst->stride[2]; 
+  }
+  rip  = ri; // rip tracks previous entry (above) for next row
+  ri  += dst->stride[2]; 
   
-    // do first col
-    for(xx = 1; xx < ic; xx++){
-      d++; bin = (int)floor(*d);
-      // unroll copy hist bins 
-      long uc = 4;
-      for(bb = 0; bb <= nbins-uc; bb+=uc){
-        ri[bb]    = rip[bb];
-        ri[bb+1]  = rip[bb+1];
-        ri[bb+2]  = rip[bb+2];
-        ri[bb+3]  = rip[bb+3];
-      }
-      for(; bb<nbins;bb++){
+  // do first col (starting at second element)
+  for(xx = 1; xx < ic; xx++){
+    // unroll copy hist bins 
+    long uc = 4;
+    for(bb = 0; bb <= dst->stride[2]-uc; bb+=uc){
+      ri[bb]    = rip[bb];
+      ri[bb+1]  = rip[bb+1];
+      ri[bb+2]  = rip[bb+2];
+      ri[bb+3]  = rip[bb+3];
+    }
+    for(; bb<dst->stride[2];bb++){
         ri[bb]  = rip[bb];
-      }
-      // increment new bin
+    }
+    // increment new bin
+    for(cc = 0; cc < ih; cc++){
+      (chanp[cc])++;
+      bin = (int)floor(*(chanp[cc]));
+      bin += cc*nbins;
       ri[bin] += 1;
-      ri+=dst->stride[2]; rip+=dst->stride[2];
     }
-    
-    // set rip to track pointer in previous col (to left)
-    rip =  rorig + cc*dst->stride[0];
-    for(yy = 1; yy < ir; yy++) {
-      THTensor_(fill)(row,0); // row accumulates values 
-      for(xx = 0; xx < ic; xx++) {
-        d++; bin = (int)floor(*d);
-        // unroll copy hist bins
-        long uc = 4;
-        rowp[bin] += 1;    // update into row storage
-        for(bb = 0; bb <= nbins-uc; bb+=uc){
-          ri[bb]    = rip[bb]   + rowp[bb]; 
-          ri[bb+1]  = rip[bb+1] + rowp[bb+1];
-          ri[bb+2]  = rip[bb+2] + rowp[bb+2];
-          ri[bb+3]  = rip[bb+3] + rowp[bb+3];
-        }
-        for(; bb<nbins;bb++){
-          ri[bb]  = rip[bb] + rowp[bb];
-        }
-        ri+=dst->stride[2]; rip+=dst->stride[2];
+    ri+=dst->stride[2];
+    rip+=dst->stride[2];
+  }
+  
+  // reset rip to track pointer in previous col (to left)
+  rip = rorig;
+  for(yy = 1; yy < ir; yy++) {
+    THTensor_(fill)(row,0); // row accumulates values 
+    for(xx = 0; xx < ic; xx++) {
+      // increment new bin
+      for(cc = 0; cc < ih; cc++){
+        (chanp[cc])++;
+        bin = (int)floor(*(chanp[cc]));
+        bin += cc*nbins;
+        rowp[bin] += 1; // update into row storage
       }
+      // unroll copy hist bins
+      long uc = 4;
+      for(bb = 0; bb <= dst->stride[2]-uc; bb+=uc){
+        ri[bb]    = rip[bb]   + rowp[bb]; 
+        ri[bb+1]  = rip[bb+1] + rowp[bb+1];
+        ri[bb+2]  = rip[bb+2] + rowp[bb+2];
+        ri[bb+3]  = rip[bb+3] + rowp[bb+3];
+      }
+      for(; bb<dst->stride[2];bb++){
+        ri[bb]  = rip[bb] + rowp[bb];
+      }
+      ri  += dst->stride[2];
+      rip += dst->stride[2];
     }
-  } // loop cc
+  }
+
   // cleanup
   THTensor_(free)(row);
-  printf("OK row\n");
   THTensor_(free)(clone);
-  printf("OK clone\n");
   THTensor_(free)(src);
-  printf("OK src\n");
-  
+  THTensor_(free)(srcPlane);
+  THTensor_(free)(clonePlane);
   return 1;
 }
 

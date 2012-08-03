@@ -421,24 +421,31 @@ function test_intHistPackedAvg(l,nbins,kr,kc,sr,sc)
    local outr = (dimr - kr + 1)/sr
    local outc = (dimc - kc + 1)/sc
    -- Ntmp = torch.Tensor(chan,dimr,dimc,nbins)
+   tmp  = torch.Tensor(chan,dimr,dimc,nbins)
    ii  = torch.Tensor(1,dimr,dimc,chan*nbins)
+   ip  = torch.Tensor(1,dimr,dimc,chan*nbins)
    aa  = torch.Tensor(1,outr,outc,chan*nbins)
-   print("TESTING: libsaliency.intAvg on intHistPacked -- DIAGONAL ONLY") 
+   print("TESTING: libsaliency.intAvg on intHistPacked -- DIAGONAL ONLY")
+
+   l.libsaliency.intHist(tmp,l,nbins,lmin,lmax)
+ 
    sys.tic()
-   l.libsaliency.intHistPack(ii,l,nbins,lmin,lmax)
+   l.libsaliency.intHistPack(ip,l,nbins,lmin,lmax)
    print(
       string.format(" - time to compute intHist:            % 4.1f ms",
                     sys.toc()*1000))
    -- make packed
-   -- sys.tic()
-   -- for i = 1,chan do 
-   --    ii:narrow(4,1+(i-1)*nbins,nbins):copy(tmp[i])
-   -- end
-   -- print(
-   --    string.format(" - time to pack           :            % 4.1f ms",
-   --                  sys.toc()*1000))
    sys.tic()
-   l.libsaliency.intAvg(aa,ii,kr,kc,sr,sc)
+   for i = 1,chan do 
+      ii:narrow(4,1+(i-1)*nbins,nbins):copy(tmp[i])
+   end
+   print(
+      string.format(" - time to pack           :            % 4.1f ms",
+                    sys.toc()*1000))
+   sys.tic()
+   diffii = torch.abs(ii - ip):sum()
+   print(diffii)
+   l.libsaliency.intAvg(aa,ip,kr,kc,sr,sc)
    print(
       string.format(" - time to compute avgHist:            % 4.1f ms",
                     sys.toc()*1000))
