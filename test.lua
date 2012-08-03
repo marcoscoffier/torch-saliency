@@ -220,8 +220,10 @@ function test_intHist(l,nbins,lmin,lmax)
    sys.tic()
    local errors = 0;
    for i = 1,chan do
+      lmin = l[i]:min()
+      lmax = l[i]:max()
       for r = 1,dimr do 
-         s = l:select(1,i):narrow(1,1,r):narrow(2,1,r):histc(nbins,lmin,lmax)
+         s = l[i]:narrow(1,1,r):narrow(2,1,r):histc(nbins,lmin,lmax)
          rs = rr[i][r][r]
          local d = torch.abs(s - rs):sum()
          if ( d > 0) then
@@ -353,8 +355,8 @@ function test_intHistAvg(l,nbins,kr,kc,sr,sc)
    local lmax = l:max()
    local outr = (dimr - kr + 1)/sr
    local outc = (dimc - kc + 1)/sc
-   ii = torch.Tensor(chan,dimr,dimc,nbins)
-   aa = torch.Tensor(chan,outr,outc,nbins)
+   local ii = torch.Tensor(chan,dimr,dimc,nbins)
+   local aa = torch.Tensor(chan,outr,outc,nbins)
    print("TESTING: libsaliency.intAvg on intHist -- DIAGONAL ONLY") 
    sys.tic()
    l.libsaliency.intHist(ii,l,nbins,lmin,lmax)
@@ -370,15 +372,90 @@ function test_intHistAvg(l,nbins,kr,kc,sr,sc)
    sys.tic()
    local errors = 0;
    for i = 1,chan do
+      -- doing perchannel min and max (for hsv)
+      lmin = l[i]:min()
+      lmax = l[i]:max()
       for r = 1,(dimr-kr)/sr + 1 do 
          if (r < (dimc-kc)/sc + 1) then
-            b = l:select(1,i):narrow(1,r,kr):narrow(2,r,kc)
+            b = l[i]:narrow(1,r,kr):narrow(2,r,kc)
             s = b:histc(nbins,lmin,lmax):mul(1/(kr*kc))
             rs = aa[i][r][r]
             local d = torch.abs(s - rs):sum()
             if ( d > 0) then
                errors = errors + 1
             end
+         end
+      end
+   end
+   print(
+      string.format(" - time to test intAvg on intHist:     % 4.1f ms",
+                    sys.toc()*1000))
+   print(" - found "..errors.." errors")
+   return errors,rr
+end
+
+function test_intHistPackedAvg(l,nbins,kr,kc,sr,sc)
+   if not l then 
+      l = torch.randn(3,256,256)
+   end
+   if not nbins then
+      nbins = 11
+   end
+   if not kr then
+      kr = 5
+   end
+   if not kc then
+      kc = 5
+   end
+   if not sr then
+      sr = 1
+   end
+   if not sc then
+      sc = 1
+   end 
+   local chan = l:size(1)
+   local dimr = l:size(2)
+   local dimc = l:size(3)
+   local lmin = l:min()
+   local lmax = l:max()
+   local outr = (dimr - kr + 1)/sr
+   local outc = (dimc - kc + 1)/sc
+   -- Ntmp = torch.Tensor(chan,dimr,dimc,nbins)
+   ii  = torch.Tensor(1,dimr,dimc,chan*nbins)
+   aa  = torch.Tensor(1,outr,outc,chan*nbins)
+   print("TESTING: libsaliency.intAvg on intHistPacked -- DIAGONAL ONLY") 
+   sys.tic()
+   l.libsaliency.intHistPack(ii,l,nbins,lmin,lmax)
+   print(
+      string.format(" - time to compute intHist:            % 4.1f ms",
+                    sys.toc()*1000))
+   -- make packed
+   -- sys.tic()
+   -- for i = 1,chan do 
+   --    ii:narrow(4,1+(i-1)*nbins,nbins):copy(tmp[i])
+   -- end
+   -- print(
+   --    string.format(" - time to pack           :            % 4.1f ms",
+   --                  sys.toc()*1000))
+   sys.tic()
+   l.libsaliency.intAvg(aa,ii,kr,kc,sr,sc)
+   print(
+      string.format(" - time to compute avgHist:            % 4.1f ms",
+                    sys.toc()*1000))
+   -- local s, b, rs
+   s = torch.Tensor(chan*nbins)
+   sys.tic()
+   local errors = 0;
+   for r = 1,(dimr-kr)/sr + 1 do 
+      if (r < (dimc-kc)/sc + 1) then
+         b = l:narrow(2,r,kr):narrow(3,r,kc)
+         for i = 1,chan do        
+            s:narrow(1,1+(i-1)*nbins,nbins):copy(b[i]:histc(nbins,lmin,lmax):mul(1/(kr*kc)))
+         end
+         rs = aa[1][r][r]
+         local d = torch.abs(s - rs):sum()
+         if ( d > 0) then
+            errors = errors + 1
          end
       end
    end

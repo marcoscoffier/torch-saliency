@@ -92,6 +92,8 @@ static int libsaliency_(Main_intImage)(lua_State *L){
  * An integral Histogram is like an integral image for each bin of the
  * histogram.
  * 
+ * FIXME add flag for perchannel, perhaps we want to pass a vector to
+ * keep things stable (or perhaps not).
  *---------------------------------------------------------*/
 static int libsaliency_(Main_intHist)(lua_State *L){
   THTensor *dst = luaT_checkudata(L, 1, torch_(Tensor_id));
@@ -101,6 +103,7 @@ static int libsaliency_(Main_intHist)(lua_State *L){
   real maxval   = 0;
   real epsilon  = 1e-6; // larger than float machine precision
   char checkoverflow = 0;
+  char perchannel    = 1;
   //struct timeval t1, t2;
   if (lua_isnumber(L,3)){
     nbins  = lua_tonumber(L,3);
@@ -133,27 +136,47 @@ static int libsaliency_(Main_intHist)(lua_State *L){
   long ir  = src->size[1]; // #input rows
   long ic  = src->size[2]; // #input cols
 
+  long cc,i,xx,yy,bb;
+
   /*
    * First compute the histogram bins (in clone) */
   THTensor *clone = THTensor_(newWithSize3d)(ih,ir,ic);
-  real *d = THTensor_(data)(clone);
-  long ne = THTensor_(nElement)(clone);
-  int i;
-  // (3 rather than 5 op) histogram code
-  THVector_(fill)(d,-minval,ne);
-  THVector_(add)(d,sd,1,ne);
-  THVector_(scale)(d,nbins/(maxval-minval),ne);
-  if (checkoverflow > 0) {
-    for (i = 0; i<ne; i++){
-      d[i] = MIN(nbins-1,MAX(0,d[i]));
+  real *dorig = THTensor_(data)(clone); // pointer to uninitialized clone
+  real *d     = dorig;
+  long ne     = clone->stride[0];
+  THTensor *srcPlane   = THTensor_(new)();
+  THTensor *clonePlane = THTensor_(new)();
+  // (3 rather than 5 op) histogram code 
+  // FIXED !! do each channel independently
+  for(cc = 0; cc < ih; cc++){
+    // source channel
+    THTensor_(select)(srcPlane, src, 0, cc);
+    sd     = THTensor_(data)(srcPlane);
+    // clone channel
+    THTensor_(select)(clonePlane, clone, 0, cc); 
+    ne     = THTensor_(nElement)(srcPlane);
+    d      = THTensor_(data)(clonePlane);
+    // compute per channel min and max
+    if (perchannel > 0) {
+      minval = THTensor_(minall)(srcPlane) - epsilon;
+      maxval = THTensor_(maxall)(srcPlane) + epsilon;
+    }
+    THVector_(fill)(d,-minval,ne);
+    THVector_(add)(d,sd,1,ne);
+    THVector_(scale)(d,nbins/(maxval-minval),ne);
+    if (checkoverflow > 0) {
+      for (i = 0; i<ne; i++){
+        d[i] = MIN(nbins-1,MAX(0,d[i]));
+      }
     }
   }
+  // reset
+  d = dorig;
 
   THTensor_(resize4d)(dst, ih, ir, ic, nbins);
   real *ri  = THTensor_(data)(dst);
   
-  real *rip,*rorig, *dorig;
-  long cc,xx,yy,bb;
+  real *rip,*rorig;
   /*
    * An integer image is the sum of all the pixels from (0,0) top-left
    * to (x,y).  Computing an integer image for the histogram is an
@@ -238,6 +261,188 @@ static int libsaliency_(Main_intHist)(lua_State *L){
   THTensor_(free)(row); 
   THTensor_(free)(clone);
   THTensor_(free)(src);
+  
+  return 1;
+}
+
+/*---------------------------------------------------------
+ *
+ * An integral Histogram is like an integral image for each bin of the
+ * histogram.
+ *
+ * This function puts all color channels in the same histogram so that
+ * after processing the output is 1 x H x W x nbins*nchan rather than
+ * nchan x H x W x nbins
+ * 
+ *---------------------------------------------------------*/
+static int libsaliency_(Main_intHistPack)(lua_State *L){
+  THTensor *dst = luaT_checkudata(L, 1, torch_(Tensor_id));
+  THTensor *src = luaT_checkudata(L, 2, torch_(Tensor_id));
+  long nbins    = 16; 
+  real minval   = 0;
+  real maxval   = 0;
+  real epsilon  = 1e-6; // larger than float machine precision
+  char checkoverflow = 0;
+  char perchannel    = 1;
+   //struct timeval t1, t2;
+  if (lua_isnumber(L,3)){
+    nbins  = lua_tonumber(L,3);
+  }
+  if (lua_isnumber(L,4)){minval = lua_tonumber(L,4);}
+  if (lua_isnumber(L,5)){maxval = lua_tonumber(L,5);}
+  if ((minval == 0)&&(maxval == 0))
+  {
+    minval = THTensor_(minall)(src);
+    maxval = THTensor_(maxall)(src);
+  }
+  // do we have another pass through the data to check the bins which
+  // overflow
+  if (((minval - THTensor_(minall)(src)) > epsilon) ||
+      ((maxval - THTensor_(maxall)(src)) > epsilon)) {
+    checkoverflow = 1;
+  }
+  if (minval == maxval)
+  {
+    minval = minval - 1;
+    maxval = maxval + 1;
+  }
+  // make sure we don't overflow
+  minval -= epsilon;
+  maxval += epsilon;
+  // make sure input is contiguous
+  src = THTensor_(newContiguous)(src);
+  real *sd = THTensor_(data)(src);
+  long ih  = src->size[0]; // #input channels
+  long ir  = src->size[1]; // #input rows
+  long ic  = src->size[2]; // #input cols
+
+  long cc,i,xx,yy,bb;
+
+  /*
+   * First compute the histogram bins (in clone) */
+  THTensor *clone = THTensor_(newWithSize3d)(ih,ir,ic);
+  real *dorig = THTensor_(data)(clone); // pointer to uninitialized clone
+  real *d     = dorig;
+  long ne     = clone->stride[0];
+  THTensor *srcPlane   = THTensor_(new)();
+  THTensor *clonePlane = THTensor_(new)();
+  // (3 rather than 5 op) histogram code 
+  // FIXED !! do each channel independently
+  for(cc = 0; cc < ih; cc++){
+    // source channel
+    THTensor_(select)(srcPlane, src, 0, cc);
+    sd     = THTensor_(data)(srcPlane);
+    // clone channel
+    THTensor_(select)(clonePlane, clone, 0, cc); 
+    ne     = THTensor_(nElement)(srcPlane);
+    d      = THTensor_(data)(clonePlane);
+    // compute per channel min and max
+    if (perchannel > 0) {
+      minval = THTensor_(minall)(srcPlane) - epsilon;
+      maxval = THTensor_(maxall)(srcPlane) + epsilon;
+    }
+    THVector_(fill)(d,-minval,ne);
+    THVector_(add)(d,sd,1,ne);
+    THVector_(scale)(d,nbins/(maxval-minval),ne);
+    if (checkoverflow > 0) {
+      for (i = 0; i<ne; i++){
+        d[i] = MIN(nbins-1,MAX(0,d[i]));
+      }
+    }
+  }
+  // reset
+  d = dorig;
+  
+  THTensor_(resize4d)(dst, ih , ir, ic, nbins);
+  real *ri  = THTensor_(data)(dst);
+  real *rip,*rorig;
+
+  /*
+   * An integer image is the sum of all the pixels from (0,0) top-left
+   * to (x,y).  Computing an integer image for the histogram is an
+   * integer image per histogram bin.
+   * 
+   * This is slow.  :(
+   * Time increases linearly with the number of histogram bins.
+   * ~20ms for 4-8 bins > 670ms for 256 bins
+   */
+    
+  rorig=ri;
+
+  THTensor *row  = THTensor_(newWithSize1d)(nbins);
+  real     *rowp = THTensor_(data)(row);
+    
+  /*
+#pragma omp parallel for private(cc,xx,yy,bb,ri,rip,d) shared (ih,ir,ic,nbins,dorig,rorig)
+  */
+  for(cc = 0; cc < ih; cc++){
+    d  = dorig + cc*clone->stride[0];
+    ri = rorig + cc*dst->stride[0];
+    // unroll fill w/ 0
+    long uc = 4;
+    for(bb = 0; bb <= nbins-uc; bb+=uc){
+      ri[bb]    = 0;
+      ri[bb+1]  = 0;
+      ri[bb+2]  = 0;
+      ri[bb+3]  = 0;
+    }
+    for(; bb<nbins;bb++){
+      ri[bb] = 0;
+    }
+    // Avoid branching.  Bin the first elem of the first row.
+    int bin = (int)floor(*d);
+    ri[bin] = 1;
+    rip = ri; // rip tracks previous entry (above)
+    ri+=dst->stride[2]; 
+  
+    // do first col
+    for(xx = 1; xx < ic; xx++){
+      d++; bin = (int)floor(*d);
+      // unroll copy hist bins 
+      long uc = 4;
+      for(bb = 0; bb <= nbins-uc; bb+=uc){
+        ri[bb]    = rip[bb];
+        ri[bb+1]  = rip[bb+1];
+        ri[bb+2]  = rip[bb+2];
+        ri[bb+3]  = rip[bb+3];
+      }
+      for(; bb<nbins;bb++){
+        ri[bb]  = rip[bb];
+      }
+      // increment new bin
+      ri[bin] += 1;
+      ri+=dst->stride[2]; rip+=dst->stride[2];
+    }
+    
+    // set rip to track pointer in previous col (to left)
+    rip =  rorig + cc*dst->stride[0];
+    for(yy = 1; yy < ir; yy++) {
+      THTensor_(fill)(row,0); // row accumulates values 
+      for(xx = 0; xx < ic; xx++) {
+        d++; bin = (int)floor(*d);
+        // unroll copy hist bins
+        long uc = 4;
+        rowp[bin] += 1;    // update into row storage
+        for(bb = 0; bb <= nbins-uc; bb+=uc){
+          ri[bb]    = rip[bb]   + rowp[bb]; 
+          ri[bb+1]  = rip[bb+1] + rowp[bb+1];
+          ri[bb+2]  = rip[bb+2] + rowp[bb+2];
+          ri[bb+3]  = rip[bb+3] + rowp[bb+3];
+        }
+        for(; bb<nbins;bb++){
+          ri[bb]  = rip[bb] + rowp[bb];
+        }
+        ri+=dst->stride[2]; rip+=dst->stride[2];
+      }
+    }
+  } // loop cc
+  // cleanup
+  THTensor_(free)(row);
+  printf("OK row\n");
+  THTensor_(free)(clone);
+  printf("OK clone\n");
+  THTensor_(free)(src);
+  printf("OK src\n");
   
   return 1;
 }
@@ -969,6 +1174,7 @@ static const luaL_reg libsaliency_(Main__) [] =
   {"intImage",           libsaliency_(Main_intImage)},
   {"intHist",            libsaliency_(Main_intHist)},
   {"intHistLong",        libsaliency_(Main_intHistLong)},
+  {"intHistPack",        libsaliency_(Main_intHistPack)},
   {"intAvg",             libsaliency_(Main_intAvg)},
   {"spatialMax",         libsaliency_(Main_spatialMax)},
   {"spatialOneOverMax",  libsaliency_(Main_spatialOneOverMax)},
