@@ -32,12 +32,7 @@ function saliency.high_entropy_features (...)
        help='how many bins in the histograms ?', default=8},
       {arg='entropyType', type='string',
        help='compute true entropy or fast approx (entropy or meanOverMax)',
-       default='meanovermax'},
-      {arg='nmswinsize', type='number',
-       help='what window over which to do non maximal suppression', 
-       default=5},
-      {arg='npts', type='number',
-       help='how many points do we return ?', default=30}
+       default='meanovermax'}
    )
 
    local t = torch.Timer()
@@ -47,11 +42,10 @@ function saliency.high_entropy_features (...)
    local rr = torch.Tensor(img:size(1),h-kr+1,w-kc+1,nbins)
    local sm = torch.Tensor(nscale,h,w):zero()
    local m  = torch.Tensor(h,w):zero()
-   local mpoints_out  = torch.Tensor(npts,2)
 
    -- compute once for all images
    local tTotal = t:time().real
-   img.libsaliency.intHist(ii,img,nbins)
+   img.libsaliency.intHistPack(ii,img,nbins)
    local tintHist = t:time().real - tTotal
    local tAvg = {}
    local tEnt = {}
@@ -242,11 +236,37 @@ function saliency.getMax(m,windowsize,npts)
       npts = 10
    end
    local t      = torch.Timer()
-   bufxy,bufval,k = 
+   local bufxy,bufval,k = 
       m.libsaliency.nonMaximalSuppression(m,windowsize,npts)
    return bufxy,bufval,k
 end
 
+function saliency.multiScaleMax(m,windowsize,npts)
+   if not windowsize then 
+      windowsize = {15,7,3}
+   end
+   if not npts then 
+      npts = 10
+   end
+   local nptstot = npts*#windowsize
+   --local 
+   bufxy = torch.Tensor(nptstot,2)
+   --local 
+   bufval = torch.Tensor(nptstot)
+   --local 
+   k = 1
+   local t = torch.Timer()
+   for _,i in pairs(windowsize) do 
+      print("win: "..i)
+      -- local 
+      bxy,bv,kk = 
+         m.libsaliency.nonMaximalSuppression(m,i,npts)
+      bufxy:narrow(1,k,kk):copy(bxy)
+      bufval:narrow(1,k,kk):copy(bv:narrow(1,1,kk))
+      k = k + kk
+   end
+   return bufxy,bufval,k
+end
 -- sm is a 3D tensor nscales x width x height. This function sums the
 -- abs difference between the scales and multiplies this by the sum of
 -- the saliencies at each scale.

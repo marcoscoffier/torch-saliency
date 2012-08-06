@@ -773,7 +773,7 @@ static int libsaliency_(Main_intAvg)(lua_State *L) {
         rs+=dst->stride[2]; ic4+=ssc; ic2+=ssc;
         // rest of row  -- *rs = (*ic4 - *ic2 - *ic3 + *ic1) * n; 
         for(cc = 1; cc < oc; cc++) {
-          // unroll
+          // unroll (faster than using TH_Vector Ops
           for(bb = 0; bb <= ib-uc; bb+=uc){
             rs[bb]  =(ic4[bb]  -ic2[bb]  -ic3[bb]  +ic1[bb]  )*n;
             rs[bb+1]=(ic4[bb+1]-ic2[bb+1]-ic3[bb+1]+ic1[bb+1])*n;
@@ -783,16 +783,6 @@ static int libsaliency_(Main_intAvg)(lua_State *L) {
           for(; bb<ib;bb++){
             rs[bb]  = (ic4[bb]-ic2[bb]-ic3[bb]+ic1[bb])*n;
           }
-#if DEBUG
-          /*
-           * To use some SSE ops the histogram bins are stored on the
-           * last (contiguous) dimension */
-          THVector_(add)(rs,ic4, 1,ib);
-          THVector_(add)(rs,ic1, 1,ib);
-          THVector_(diff)(rs,rs,ic2,ib);
-          THVector_(diff)(rs,rs,ic3,ib);
-          THVector_(scale)(rs,n,ib); 
-#endif /* DEBUG */
           rs+=dst->stride[2];
           ic1+=ssc; ic2+=ssc; ic3+=ssc; ic4+=ssc;
         }
