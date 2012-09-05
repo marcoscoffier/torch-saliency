@@ -1,6 +1,5 @@
 require 'torch'
 require 'dok'
-require 'inline'
 
 saliency = {}
 
