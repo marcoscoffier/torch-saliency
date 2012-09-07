@@ -897,12 +897,18 @@ function test_getMaxN_multiGaussian(ng,gsize,imsize,msize)
       img:narrow(1,xy[i][1],gsizes[i][1]):narrow(2,xy[i][2],gsizes[i][1]):add(image.gaussian(gsizes[i][1]))
    end
    sys.tic()
-   -- m,p = saliency.getMaxNew(img,msize,ng)
-   local m,mi,p = saliency.getMax(img,msize,ng)
+   m,p,k = saliency.fastGetMax(img,msize,ng)
    print(
       string.format(" - time to compute getMaxN:            % 4.1f ms",
                     sys.toc()*1000))
 
+   sys.tic()
+   m,p,k = saliency.newNMS(img,msize,ng)
+   print(
+      string.format(" - time to compute newNMS:            % 4.1f ms",
+                    sys.toc()*1000))
+
+   
    local rgbimg = torch.Tensor(3,imsize,imsize)
    rgbimg:select(1,1):copy(img)
    rgbimg:select(1,2):copy(img)
@@ -912,11 +918,14 @@ function test_getMaxN_multiGaussian(ng,gsize,imsize,msize)
    local hw     = math.floor(w*0.5)
 
    sys.tic()
-   for i = 1,p do
-      local xr= rgbimg:narrow(2,m[i][2]-hw,w):narrow(3,m[i][1],1)
+   -- make green crosses
+   for i = 1,k do
+      local lh = math.min(math.max(1,m[i][2]-hw),imsize-w)
+      local bh = math.min(math.max(1,m[i][1]-hw),imsize-w)
+      local xr= rgbimg:narrow(2,lh,w):narrow(3,m[i][1],1)
       xr:zero()
       xr:select(1,2):add(1)
-      local xc = rgbimg:narrow(2,m[i][2],1):narrow(3,m[i][1]-hw,w)
+      local xc = rgbimg:narrow(2,m[i][2],1):narrow(3,bh,w)
       xc:zero()
       xc:select(1,2):add(1)
    end
@@ -1001,6 +1010,7 @@ if not opt.dontRun then
    end
 
    img,m,p,xy = test_getMaxN_multiGaussian()
+
 
 end
 

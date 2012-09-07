@@ -1066,9 +1066,11 @@ static int libsaliency_(Main_spatialEnt)(lua_State *L) {
 }
 
 /*
- * nonMaximalSuppression:  which sorts and returns best matches.
+ * nonMaximalSuppression: which sorts and returns best matches. Uses
+ * Michael's trick to only search on horizonal and vertical line
+ * around point.
  */
-static int libsaliency_(Main_nonMaximalSuppression)(lua_State *L) {
+static int libsaliency_(Main_fastNMS)(lua_State *L) {
   THTensor *mat    = luaT_checkudata(L, 1, torch_(Tensor_id));
   long windowsize  = 5;
   if (lua_isnumber(L,2)){
@@ -1180,22 +1182,203 @@ static int libsaliency_(Main_nonMaximalSuppression)(lua_State *L) {
   return 3;  
 }
 
+/*
+ * nonMaximalSuppression: which sorts and returns best matches. Uses
+ * Michael's trick to only search on horizonal and vertical line
+ * around point.
+ */
+static int libsaliency_(Main_newNMS)(lua_State *L) {
+  THTensor *src    = luaT_checkudata(L, 1, torch_(Tensor_id));
+  // check that src is 2d
+  THArgCheck(src->nDimension == 2, 1, "input must be 2D");
+  // make sure input is contiguous
+  src = THTensor_(newContiguous)(src);
+  
+  long wxh = src->size[0]*src->size[1];
+  long windowsize  = 5;
+  if (lua_isnumber(L,2)){
+    windowsize  = lua_tonumber(L, 2);
+  }
+  long hw          = floor(windowsize*0.5);
+  long outh        = src->size[0] - windowsize + 1;
+  long outw        = src->size[1] - windowsize + 1;
+  long npts        = -1;
+  if (lua_isnumber(L,3)){
+    npts = lua_tonumber(L,3);
+  }
+  // if not buf, bufv ...
+  THTensor *buf;
+  if (luaT_isudata(L,4,torch_(Tensor_id))){
+    buf = luaT_toudata(L, 4, torch_(Tensor_id));
+    THTensor_(resize2d)(buf,wxh,2);
+
+  } else {
+    buf = THTensor_(newWithSize2d)(wxh,2);
+  }
+  real * bufd = THTensor_(data)(buf);
+
+  THTensor *bufv;
+  if (luaT_isudata(L,5,torch_(Tensor_id))){
+    bufv = luaT_toudata(L, 5, torch_(Tensor_id));
+    THTensor_(resize1d)(bufv,wxh);
+  } else {
+    bufv = THTensor_(newWithSize1d)(wxh);
+  }
+  real * bufvd = THTensor_(data)(bufv);
+  
+  THTensor *tmpC = THTensor_(newWithSize2d)(outh,src->size[1]);
+  // for input
+  real * sd;
+  real * ssd;
+  // for output
+  real * cd;
+  
+  /*
+   * Take max over columns (non-continguous dimension), put in tmpC
+   */
+  long i,j,k;
+  long ncwindowsize = windowsize * src->stride[0];
+  real maxv;
+  for (i=0; i < src->size[1]; i++){
+    // set data pointers to top of a column;
+    cd = THTensor_(data)(tmpC) + i;
+    sd = THTensor_(data)(src) + i;
+    // reset max
+    maxv = -HUGE_VAL;
+    // do first windowsize (from 0 -> ws-1)
+    for (k=0; k < ncwindowsize; k+=src->stride[0] ){
+      maxv = THMax(maxv,sd[k]);
+    }
+    *cd = maxv; cd+=src->stride[0];
+    // j is just a counter, doesn't index anything
+    for (j=windowsize; j < src->size[0]; j++){
+      // test if we need to recompute the max add last element (max)
+      if (sd[0] == maxv){
+        // reset max
+        maxv = -HUGE_VAL;
+        for (k=src->stride[0]; k <= ncwindowsize; k+=src->stride[0] ){
+          maxv = THMax(maxv,sd[k]);
+        }
+      } else {
+        maxv = THMax(maxv,sd[ncwindowsize]);
+      }
+      *cd = maxv;
+      sd+=src->stride[0]; cd+=src->stride[0];
+    }
+  }
+
+  /*
+   * Take max in each row of the column max, if this value is equal to
+   * the input we have a maximal point and we store it in buf.
+   */
+  long fpts = 0;
+  int off   = hw + 1;
+  // (s)sd is used for comparisons we choose the middle point of each
+  // sliding window for the comparison.
+  ssd = THTensor_(data)(src) + hw*src->stride[0] + hw;
+  for (i=0; i < outh; i++){
+    // reset source data pointer
+    sd = ssd + i*src->stride[0];
+    // reset column data pointer
+    cd = THTensor_(data)(tmpC) + i*src->stride[0];
+    
+    // reset max
+    maxv = -HUGE_VAL;
+    // do first windowsize (from 0 -> ws-1)
+    for (k=0; k < windowsize; k++ ){
+      maxv = THMax(maxv,cd[k]);
+    }
+    if (maxv == *sd) {
+      // we have a point, opencv order
+      *bufd = off; bufd++;
+      *bufd = i + off; bufd++;
+      *bufvd = maxv; bufvd++;
+      fpts++;
+    }
+    sd++;
+    for (j=1; j < outw; j++){
+      // test if we need to recompute the max add last element (max)
+      if (cd[0] == maxv){
+        // reset max
+        maxv = -HUGE_VAL;
+        // compute max
+        for (k=1; k <= windowsize; k++ ){
+          maxv = THMax(maxv,cd[k]);
+        }
+      } else {
+        maxv = THMax(maxv,cd[windowsize]);
+      }
+      if (maxv == *sd) {
+        // we have a point, opencv order
+        *bufd = j + off; bufd++;
+        *bufd = i + off; bufd++;
+        *bufvd = maxv; bufvd++;
+        fpts++;
+      }
+      // everything is contiguous
+      sd++; cd++;
+    }
+  }
+
+  /* 
+   *   Sort the points found.
+   */
+  if (fpts>0) {
+    // don't sort on more points than we found
+    THTensor_(narrow)(buf,NULL,0,0,fpts);
+    THTensor_(narrow)(bufv,NULL,0,0,fpts);
+    THTensor *outv      = THTensor_(new)();
+    THLongTensor *sorti = THLongTensor_new();
+    THTensor_(sort)(outv,sorti,bufv,0,1);
+    long *sd            = THLongTensor_data(sorti);
+    // make sure we don't return more than asked for
+    if ((npts>0)&&(npts<fpts)) { fpts = npts; }
+    THTensor *outxy     = THTensor_(newWithSize2d)(fpts,2);
+    real * outd         = THTensor_(data)(outxy);
+    real * bufd         = THTensor_(data)(buf);
+    // copy the locations of the highest scoring points
+    for (i=0;i<fpts;i++){
+      outd[(long)(i*outxy->size[1])]   =
+        bufd[(long)(sd[i]*buf->size[1])];
+      outd[(long)(i*outxy->size[1]+1)] =
+        bufd[(long)(sd[i]*buf->size[1]+1)];
+    }
+    // return a tensor
+    luaT_pushudata(L, outxy, torch_(Tensor_id));
+    luaT_pushudata(L, outv, torch_(Tensor_id));
+    lua_pushnumber(L,fpts);
+    THLongTensor_free(sorti);
+  } else {
+    // return a tensor
+    luaT_pushudata(L, buf,  torch_(Tensor_id));
+    luaT_pushudata(L, bufv, torch_(Tensor_id));
+    lua_pushnumber(L,0);
+  }
+    
+  // cleanup
+  THTensor_(free)(src);
+  THTensor_(free)(tmpC);
+  return 3;  
+}
+
+
 //============================================================
 // Register functions in LUA
 //
 static const luaL_reg libsaliency_(Main__) [] =
 {
-  {"intImage",           libsaliency_(Main_intImage)},
-  {"intHist",            libsaliency_(Main_intHist)},
-  {"intHistLong",        libsaliency_(Main_intHistLong)},
-  {"intHistPack",        libsaliency_(Main_intHistPack)},
-  {"intAvg",             libsaliency_(Main_intAvg)},
-  {"spatialMax",         libsaliency_(Main_spatialMax)},
-  {"spatialOneOverMax",  libsaliency_(Main_spatialOneOverMax)},
-  {"spatialMeanOverMax", libsaliency_(Main_spatialMeanOverMax)},
-  {"scaleSaliency",      libsaliency_(Main_scaleSaliency)},
-  {"spatialEnt",         libsaliency_(Main_spatialEnt)},
-  {"nonMaximalSuppression", libsaliency_(Main_nonMaximalSuppression)},
+  {"intImage",              libsaliency_(Main_intImage)},
+  {"intHist",               libsaliency_(Main_intHist)},
+  {"intHistLong",           libsaliency_(Main_intHistLong)},
+  {"intHistPack",           libsaliency_(Main_intHistPack)},
+  {"intAvg",                libsaliency_(Main_intAvg)},
+  {"spatialMax",            libsaliency_(Main_spatialMax)},
+  {"spatialOneOverMax",     libsaliency_(Main_spatialOneOverMax)},
+  {"spatialMeanOverMax",    libsaliency_(Main_spatialMeanOverMax)},
+  {"scaleSaliency",         libsaliency_(Main_scaleSaliency)},
+  {"spatialEnt",            libsaliency_(Main_spatialEnt)},
+  {"fastNMS",               libsaliency_(Main_fastNMS)},
+  {"newNMS",                libsaliency_(Main_newNMS)},
   {NULL,NULL}
 };
   

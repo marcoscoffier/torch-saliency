@@ -223,21 +223,31 @@ function saliency.high_entropy_motion_features (...)
    end
 end
 
--- Non-maximal suppression: takes the max of each row and the max of
--- each col and places in a buffer if this value = the actual value
--- then you have a local max at this position.
 
-function saliency.getMax(m,windowsize,npts)
+-- Non-maximal suppression: takes the full max of each windowsize x
+-- windowsize patch and places it in a buffer. If this value = the
+-- actual value then you have a local max at this position.
+function saliency.newNMS(m,windowsize,npts)
    if not windowsize then
       windowsize = 5
    end
    if not npts then
       npts = 10
    end
-   local t      = torch.Timer()
-   local bufxy,bufval,k = 
-      m.libsaliency.nonMaximalSuppression(m,windowsize,npts)
-   return bufxy,bufval,k
+   return m.libsaliency.newNMS(m,windowsize,npts)
+end
+
+-- Non-maximal suppression: takes the max of each row and the max of
+-- each col and places it in a buffer. If this value = the actual
+-- value then you have a local max at this position.
+function saliency.fastGetMax(m,windowsize,npts)
+   if not windowsize then
+      windowsize = 5
+   end
+   if not npts then
+      npts = 10
+   end
+   return m.libsaliency.fastNMS(m,windowsize,npts)
 end
 
 function saliency.multiScaleMax(m,windowsize,npts)
@@ -248,20 +258,38 @@ function saliency.multiScaleMax(m,windowsize,npts)
       npts = 10
    end
    local nptstot = npts*#windowsize
+   local mm = torch.Tensor(m:size()):copy(m)
    --local 
-   bufxy = torch.Tensor(nptstot,2)
+   bufxy = {}
    --local 
-   bufval = torch.Tensor(nptstot)
+   bufval = {}
    --local 
    k = 1
    local t = torch.Timer()
-   for _,i in pairs(windowsize) do 
-      print("win: "..i)
+   -- go from big to small
+   for i = 1,#windowsize do 
+      print("win: "..windowsize[i])
       -- local 
       bxy,bv,kk = 
-         m.libsaliency.nonMaximalSuppression(m,i,npts)
-      bufxy:narrow(1,k,kk):copy(bxy)
-      bufval:narrow(1,k,kk):copy(bv:narrow(1,1,kk))
+         mm.libsaliency.nonMaximalSuppression(mm,i,npts)
+      -- force smaller not to overlap with center of the bigger
+      -- by filling center of bigger with zeros the size of the next size
+      if (i < #windowsize) then
+         local hw = math.floor(windowsize[i+1]*0.5)
+         local w  = hw*2
+         local maxx = mm:size(2)
+         local maxy = mm:size(1)
+         print(m:size())
+         for n = 1,kk do
+            local y = math.max(1,bxy[n][2]-hw)
+            local x = math.max(1,bxy[n][1]-hw)
+            local wy = math.min(w,maxy-y)
+            local wx = math.min(w,maxx-x)
+            mm:narrow(1,y,wy):narrow(2,x,wx):fill(0)
+         end
+      end
+      table.insert(bufxy,bxy)
+      table.insert(bufval,bv)
       k = k + kk
    end
    return bufxy,bufval,k
