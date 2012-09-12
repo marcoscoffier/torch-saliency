@@ -240,7 +240,7 @@ end
 -- Non-maximal suppression: takes the max of each row and the max of
 -- each col and places it in a buffer. If this value = the actual
 -- value then you have a local max at this position.
-function saliency.fastGetMax(m,windowsize,npts)
+function saliency.getMax(m,windowsize,npts)
    if not windowsize then
       windowsize = 5
    end
