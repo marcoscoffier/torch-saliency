@@ -888,7 +888,7 @@ function test_getMaxN_multiGaussian(ng,gsize,imsize,msize)
       msize = 5
    end
 
-   print("TESTING: saliency.getMaxN")
+   print("TESTING: saliency.getMax")
    local img = torch.Tensor(imsize,imsize):zero()
    local gsizes = torch.rand(ng,1):mul((gsize-5)*0.5):floor():mul(2):add(5)
    local gweight = torch.rand(ng,1):add(0.1)
@@ -897,7 +897,7 @@ function test_getMaxN_multiGaussian(ng,gsize,imsize,msize)
       img:narrow(1,xy[i][1],gsizes[i][1]):narrow(2,xy[i][2],gsizes[i][1]):add(image.gaussian(gsizes[i][1]))
    end
    sys.tic()
-   m,p,k = saliency.fastGetMax(img,msize,ng)
+   m,p,k = saliency.getMax(img,msize,ng)
    print(
       string.format(" - time to compute getMaxN:            % 4.1f ms",
                     sys.toc()*1000))

@@ -17,8 +17,6 @@
 #include <luaT.h>
 #include <TH.h>
 
-#include "omp.h"
-
 #include <sys/param.h>
 #include <sys/time.h>
 
@@ -33,9 +31,9 @@
  *---------------------------------------------------------*/
 static int libsaliency_(Main_intImage)(lua_State *L){
   THTensor *dst =
-    luaT_checkudata(L, 1, torch_(Tensor_id));
+    luaT_checkudata(L, 1, torch_Tensor);
   THTensor *src =
-    luaT_checkudata(L, 2, torch_(Tensor_id));
+    luaT_checkudata(L, 2, torch_Tensor);
   
   // make sure input is contiguous
   src = THTensor_(newContiguous)(src);
@@ -96,8 +94,8 @@ static int libsaliency_(Main_intImage)(lua_State *L){
  * keep things stable (or perhaps not).
  *---------------------------------------------------------*/
 static int libsaliency_(Main_intHist)(lua_State *L){
-  THTensor *dst = luaT_checkudata(L, 1, torch_(Tensor_id));
-  THTensor *src = luaT_checkudata(L, 2, torch_(Tensor_id));
+  THTensor *dst = luaT_checkudata(L, 1, torch_Tensor);
+  THTensor *src = luaT_checkudata(L, 2, torch_Tensor);
   long nbins    = 16; 
   real minval   = 0;
   real maxval   = 0;
@@ -276,8 +274,8 @@ static int libsaliency_(Main_intHist)(lua_State *L){
  * 
  *---------------------------------------------------------*/
 static int libsaliency_(Main_intHistPack)(lua_State *L){
-  THTensor *dst = luaT_checkudata(L, 1, torch_(Tensor_id));
-  THTensor *src = luaT_checkudata(L, 2, torch_(Tensor_id));
+  THTensor *dst = luaT_checkudata(L, 1, torch_Tensor);
+  THTensor *src = luaT_checkudata(L, 2, torch_Tensor);
   long nbins    = 16; 
   real minval   = 0;
   real maxval   = 0;
@@ -478,8 +476,8 @@ static int libsaliency_(Main_intHistPack)(lua_State *L){
  * 
  *---------------------------------------------------------*/
 static int libsaliency_(Main_intHistLong)(lua_State *L){
-  THLongTensor *dst = luaT_checkudata(L, 1, torch_LongTensor_id);
-  THTensor *src = luaT_checkudata(L, 2, torch_(Tensor_id));
+  THLongTensor *dst = luaT_checkudata(L, 1, torch_Tensor);
+  THTensor *src = luaT_checkudata(L, 2, torch_Tensor);
   long nbins    = 16; 
   real minval   = 0;
   real maxval   = 0;
@@ -638,9 +636,9 @@ static int libsaliency_(Main_intHistLong)(lua_State *L){
  */
 static int libsaliency_(Main_intAvg)(lua_State *L) {
   THTensor *dst =
-    luaT_checkudata(L, 1, torch_(Tensor_id));
+    luaT_checkudata(L, 1, torch_Tensor);
   THTensor *src =
-    luaT_checkudata(L, 2, torch_(Tensor_id));
+    luaT_checkudata(L, 2, torch_Tensor);
 
   /* Get Args. */
   /* // Window (kernel) in which we compute the hist */
@@ -812,9 +810,9 @@ static int libsaliency_(Main_intAvg)(lua_State *L) {
  */
 static int libsaliency_(Main_spatialMax)(lua_State *L) {
   THTensor *dst =
-    luaT_checkudata(L, 1, torch_(Tensor_id));
+    luaT_checkudata(L, 1, torch_Tensor);
   THTensor *src =
-    luaT_checkudata(L, 2, torch_(Tensor_id));
+    luaT_checkudata(L, 2, torch_Tensor);
 
   THArgCheck(src->nDimension == 4, 1,
              "input is 4D hist tensor (chan,row,col,nbins)");
@@ -862,9 +860,9 @@ static int libsaliency_(Main_spatialMax)(lua_State *L) {
  */
 static int libsaliency_(Main_spatialOneOverMax)(lua_State *L) {
   THTensor *dst =
-    luaT_checkudata(L, 1, torch_(Tensor_id));
+    luaT_checkudata(L, 1, torch_Tensor);
   THTensor *src =
-    luaT_checkudata(L, 2, torch_(Tensor_id));
+    luaT_checkudata(L, 2, torch_Tensor);
 
   THArgCheck(src->nDimension == 4, 1,
              "input is 4D hist tensor (chan,row,col,nbins)");
@@ -912,9 +910,9 @@ static int libsaliency_(Main_spatialOneOverMax)(lua_State *L) {
  */
 static int libsaliency_(Main_spatialMeanOverMax)(lua_State *L) {
   THTensor *dst =
-    luaT_checkudata(L, 1, torch_(Tensor_id));
+    luaT_checkudata(L, 1, torch_Tensor);
   THTensor *src =
-    luaT_checkudata(L, 2, torch_(Tensor_id));
+    luaT_checkudata(L, 2, torch_Tensor);
 
   THArgCheck(src->nDimension == 4, 1,
              "input is 4D hist tensor (chan,row,col,nbins)");
@@ -965,9 +963,9 @@ static int libsaliency_(Main_spatialMeanOverMax)(lua_State *L) {
  */
 static int libsaliency_(Main_scaleSaliency)(lua_State *L) {
   THTensor *dst =
-    luaT_checkudata(L, 1, torch_(Tensor_id));
+    luaT_checkudata(L, 1, torch_Tensor);
   THTensor *src =
-    luaT_checkudata(L, 2, torch_(Tensor_id));
+    luaT_checkudata(L, 2, torch_Tensor);
 
   THArgCheck(src->nDimension == 3, 1,
              "input is 3D scales tensor (scales,row,col)");
@@ -1019,9 +1017,9 @@ static int libsaliency_(Main_scaleSaliency)(lua_State *L) {
  */
 static int libsaliency_(Main_spatialEnt)(lua_State *L) {
   THTensor *dst =
-    luaT_checkudata(L, 1, torch_(Tensor_id));
+    luaT_checkudata(L, 1, torch_Tensor);
   THTensor *src =
-    luaT_checkudata(L, 2, torch_(Tensor_id));
+    luaT_checkudata(L, 2, torch_Tensor);
 
   THArgCheck(src->nDimension == 4, 1,
              "input is 4D hist tensor (chan,row,col,nbins)");
@@ -1071,7 +1069,7 @@ static int libsaliency_(Main_spatialEnt)(lua_State *L) {
  * around point.
  */
 static int libsaliency_(Main_fastNMS)(lua_State *L) {
-  THTensor *mat    = luaT_checkudata(L, 1, torch_(Tensor_id));
+  THTensor *mat    = luaT_checkudata(L, 1, torch_Tensor);
   long windowsize  = 5;
   if (lua_isnumber(L,2)){
     windowsize  = lua_tonumber(L, 2);
@@ -1083,14 +1081,14 @@ static int libsaliency_(Main_fastNMS)(lua_State *L) {
   }
   // if not buf, bufv ...
   THTensor *buf;
-  if (luaT_isudata(L,4,torch_(Tensor_id))){
-    buf = luaT_toudata(L, 4, torch_(Tensor_id));
+  if (luaT_isudata(L,4,torch_Tensor)){
+    buf = luaT_toudata(L, 4, torch_Tensor);
   } else {
     buf = THTensor_(new)();
   }
   THTensor *bufv;
-  if (luaT_isudata(L,5,torch_(Tensor_id))){
-    bufv = luaT_toudata(L, 5, torch_(Tensor_id));
+  if (luaT_isudata(L,5,torch_Tensor)){
+    bufv = luaT_toudata(L, 5, torch_Tensor);
   } else {
     bufv = THTensor_(new)();
   }
@@ -1159,16 +1157,16 @@ static int libsaliency_(Main_fastNMS)(lua_State *L) {
         bufd[(long)(sd[i]*buf->size[1]+1)];
     }
     // return a tensor
-    luaT_pushudata(L, outxy, torch_(Tensor_id));
-    luaT_pushudata(L, outv, torch_(Tensor_id));
+    luaT_pushudata(L, outxy, torch_Tensor);
+    luaT_pushudata(L, outv, torch_Tensor);
     lua_pushnumber(L,k);
     THLongTensor_free(sorti);
     THTensor_(free)(buf);
     THTensor_(free)(bufv);
   } else {
     // return a tensor
-    luaT_pushudata(L, buf,  torch_(Tensor_id));
-    luaT_pushudata(L, bufv, torch_(Tensor_id));
+    luaT_pushudata(L, buf,  torch_Tensor);
+    luaT_pushudata(L, bufv, torch_Tensor);
     lua_pushnumber(L,0);
   }
   // cleanup
@@ -1188,7 +1186,7 @@ static int libsaliency_(Main_fastNMS)(lua_State *L) {
  * around point.
  */
 static int libsaliency_(Main_newNMS)(lua_State *L) {
-  THTensor *src    = luaT_checkudata(L, 1, torch_(Tensor_id));
+  THTensor *src    = luaT_checkudata(L, 1, torch_Tensor);
   // check that src is 2d
   THArgCheck(src->nDimension == 2, 1, "input must be 2D");
   // make sure input is contiguous
@@ -1208,8 +1206,8 @@ static int libsaliency_(Main_newNMS)(lua_State *L) {
   }
   // if not buf, bufv ...
   THTensor *buf;
-  if (luaT_isudata(L,4,torch_(Tensor_id))){
-    buf = luaT_toudata(L, 4, torch_(Tensor_id));
+  if (luaT_isudata(L,4,torch_Tensor)){
+    buf = luaT_toudata(L, 4, torch_Tensor);
     THTensor_(resize2d)(buf,wxh,2);
 
   } else {
@@ -1218,8 +1216,8 @@ static int libsaliency_(Main_newNMS)(lua_State *L) {
   real * bufd = THTensor_(data)(buf);
 
   THTensor *bufv;
-  if (luaT_isudata(L,5,torch_(Tensor_id))){
-    bufv = luaT_toudata(L, 5, torch_(Tensor_id));
+  if (luaT_isudata(L,5,torch_Tensor)){
+    bufv = luaT_toudata(L, 5, torch_Tensor);
     THTensor_(resize1d)(bufv,wxh);
   } else {
     bufv = THTensor_(newWithSize1d)(wxh);
@@ -1344,14 +1342,14 @@ static int libsaliency_(Main_newNMS)(lua_State *L) {
         bufd[(long)(sd[i]*buf->size[1]+1)];
     }
     // return a tensor
-    luaT_pushudata(L, outxy, torch_(Tensor_id));
-    luaT_pushudata(L, outv, torch_(Tensor_id));
+    luaT_pushudata(L, outxy, torch_Tensor);
+    luaT_pushudata(L, outv, torch_Tensor);
     lua_pushnumber(L,fpts);
     THLongTensor_free(sorti);
   } else {
     // return a tensor
-    luaT_pushudata(L, buf,  torch_(Tensor_id));
-    luaT_pushudata(L, bufv, torch_(Tensor_id));
+    luaT_pushudata(L, buf,  torch_Tensor);
+    luaT_pushudata(L, bufv, torch_Tensor);
     lua_pushnumber(L,0);
   }
     
@@ -1365,7 +1363,7 @@ static int libsaliency_(Main_newNMS)(lua_State *L) {
 //============================================================
 // Register functions in LUA
 //
-static const luaL_reg libsaliency_(Main__) [] =
+static const struct luaL_reg libsaliency_(Main__) [] =
 {
   {"intImage",              libsaliency_(Main_intImage)},
   {"intHist",               libsaliency_(Main_intHist)},
@@ -1382,11 +1380,11 @@ static const luaL_reg libsaliency_(Main__) [] =
   {NULL,NULL}
 };
   
-DLL_EXPORT int libsaliency_(Main_init) (lua_State *L)
+static void libsaliency_(Main_init) (lua_State *L)
 {
-  luaT_pushmetaclass(L, torch_(Tensor_id));
+  luaT_pushmetatable(L, torch_Tensor);
   luaT_registeratname(L, libsaliency_(Main__), "libsaliency");
-  return 1;
+  lua_pop(L,1);
 }
 
 #endif
